@@ -1,0 +1,10 @@
+{
+  "name": "job-match-analyser",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "npm run dev --workspace @analyser/web",
+    "build": "npm run build --workspace @analyser/web",
+    "start": "npm run start --workspace @analyser/web"
+  }
+}
