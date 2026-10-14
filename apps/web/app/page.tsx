@@ -70,14 +70,15 @@ export default function Home() {
   async function extractPdfText(file: File) {
     const pdfjs = await import("pdfjs-dist");
     pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
-    const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+    const loadingTask = pdfjs.getDocument({ data: await file.arrayBuffer() });
+    const pdf = await loadingTask.promise;
     const pages: string[] = [];
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
       const page = await pdf.getPage(pageNumber);
       const content = await page.getTextContent();
       pages.push(content.items.map((item) => ("str" in item ? item.str : "")).join(" "));
     }
-    await pdf.destroy();
+    await loadingTask.destroy();
     return pages.join("\n").replace(/[ \t]+/g, " ").trim();
   }
 
