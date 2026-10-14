@@ -27,7 +27,7 @@ function extractTerms(text: string): string[] {
   return [...found];
 }
 
-export type MatchResult = { score: number; matched: string[]; missing: string[]; groups: { name: string; matched: string[]; missing: string[] }[]; strengths: string[] };
+export type MatchResult = { score: number; matched: string[]; missing: string[]; skillMatched: string[]; skillMissing: string[]; groups: { name: string; matched: string[]; missing: string[] }[]; strengths: string[] };
 
 export function analyseMatch(resume: string, job: string): MatchResult {
   const resumeText = normalize(resume);
@@ -38,6 +38,8 @@ export function analyseMatch(resume: string, job: string): MatchResult {
     const relevant = terms.filter((term) => normalize(job).includes(term));
     return { name, matched: relevant.filter((term) => resumeText.includes(term)), missing: relevant.filter((term) => !resumeText.includes(term)) };
   }).filter((group) => group.matched.length + group.missing.length > 0);
+  const skillMatched = [...new Set(groups.flatMap((group) => group.matched))];
+  const skillMissing = [...new Set(groups.flatMap((group) => group.missing))];
   const score = jobTerms.length ? Math.round((matched.length / jobTerms.length) * 100) : 0;
-  return { score, matched, missing, groups, strengths: matched.slice(0, 4) };
+  return { score, matched, missing, skillMatched, skillMissing, groups, strengths: skillMatched.slice(0, 4) };
 }

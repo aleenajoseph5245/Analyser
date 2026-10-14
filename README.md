@@ -26,7 +26,7 @@ Import this repository into Vercel. Choose `apps/web` as the application root di
 
 ## Current scope
 
-- Paste résumé and job description text or upload a plain text `.txt` / `.md` résumé.
+- Paste résumé and job description text or upload a text based `.pdf`, `.txt`, or `.md` résumé. PDF extraction happens in the browser; scanned image-only PDFs need OCR and can be pasted after text recognition.
 - See a keyword overlap score, matching strengths, and role terms to consider highlighting.
 - All matching runs locally in the browser; the current app has no server-side storage.
 

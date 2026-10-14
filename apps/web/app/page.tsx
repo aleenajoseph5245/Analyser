@@ -31,20 +31,54 @@ export default function Home() {
   const [analysed, setAnalysed] = useState(true);
   const [activeTab, setActiveTab] = useState("Overview");
   const [fileName, setFileName] = useState("");
+  const [fileError, setFileError] = useState("");
+  const [isReadingFile, setIsReadingFile] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const result = useMemo(() => analyseMatch(submittedResume, submittedJob), [submittedResume, submittedJob]);
   const scoreColor = result.score >= 70 ? "#208768" : result.score >= 45 ? "#b27b23" : "#cb615d";
 
   function handleFile(file?: File) {
     if (!file) return;
-    if (!file.type.startsWith("text/") && !/\.(txt|md)$/i.test(file.name)) {
-      setFileName("Only .txt and .md files are supported");
+    setFileError("");
+    const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+    const isText = file.type.startsWith("text/") || /\.(txt|md)$/i.test(file.name);
+    if (!isPdf && !isText) {
+      setFileError("Choose a PDF, TXT, or MD file.");
+      setIsReadingFile(false);
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      setFileError("Choose a file smaller than 15 MB.");
       return;
     }
     setFileName(file.name);
+    setIsReadingFile(true);
+    if (isPdf) {
+      void extractPdfText(file).then((text) => {
+        if (!text.trim()) setFileError("No selectable text found. Scanned PDFs need OCR; you can paste the résumé text instead.");
+        else { setResume(text); setAnalysed(false); }
+      }).catch(() => setFileError("Couldn’t read this PDF. Try another PDF or paste the résumé text."))
+        .finally(() => setIsReadingFile(false));
+      return;
+    }
     const reader = new FileReader();
-    reader.onload = () => { setResume(String(reader.result ?? "")); setAnalysed(false); };
+    reader.onload = () => { setResume(String(reader.result ?? "")); setAnalysed(false); setIsReadingFile(false); };
+    reader.onerror = () => { setFileError("Couldn’t read this file."); setIsReadingFile(false); };
     reader.readAsText(file);
+  }
+
+  async function extractPdfText(file: File) {
+    const pdfjs = await import("pdfjs-dist");
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
+    const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+    const pages: string[] = [];
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const content = await page.getTextContent();
+      pages.push(content.items.map((item) => ("str" in item ? item.str : "")).join(" "));
+    }
+    await pdf.destroy();
+    return pages.join("\n").replace(/[ \t]+/g, " ").trim();
   }
 
   function runAnalysis() {
@@ -74,7 +108,7 @@ export default function Home() {
 
         <div className="workspace-grid">
           <div className="input-column">
-            <section className="input-card resume-card"><div className="card-heading"><div className="card-title-wrap"><span className="step-number">01</span><div><h2>Your résumé</h2><p>Start with the experience you bring.</p></div></div><button className="text-button" onClick={() => fileRef.current?.click()}><Icon name="upload" size={15}/>Upload file</button><input ref={fileRef} className="hidden" type="file" accept=".txt,.md,text/plain" onChange={(e) => handleFile(e.target.files?.[0])}/></div><textarea aria-label="Résumé text" value={resume} onChange={(e) => { setResume(e.target.value); setAnalysed(false); }} /><div className="card-footer"><span>{fileName ? <><span className="file-dot"/>{fileName}</> : <><span className="file-dot"/>Your résumé stays on this device</>}</span><span>{resume.trim().split(/\s+/).filter(Boolean).length} words</span></div></section>
+            <section className="input-card resume-card"><div className="card-heading"><div className="card-title-wrap"><span className="step-number">01</span><div><h2>Your résumé</h2><p>Start with the experience you bring.</p></div></div><button className="text-button" onClick={() => fileRef.current?.click()}><Icon name="upload" size={15}/>{isReadingFile ? "Reading file…" : "Upload file"}</button><input ref={fileRef} className="hidden" type="file" accept=".pdf,.txt,.md,application/pdf,text/plain" onChange={(e) => handleFile(e.target.files?.[0])}/></div><textarea aria-label="Résumé text" value={resume} onChange={(e) => { setResume(e.target.value); setAnalysed(false); }} /><div className="card-footer"><span className={fileError ? "file-error" : ""}>{fileError || (fileName ? <><span className="file-dot"/>{fileName}</> : <><span className="file-dot"/>PDF, TXT, or MD · stays on this device</>)}</span><span>{resume.trim().split(/\s+/).filter(Boolean).length} words</span></div></section>
 
             <section className="input-card job-card"><div className="card-heading"><div className="card-title-wrap"><span className="step-number step-two">02</span><div><h2>Job description</h2><p>Paste the role you have in mind.</p></div></div><button className="clear-button" onClick={() => { setJob(""); setAnalysed(false); }}>Clear</button></div><textarea aria-label="Job description" value={job} onChange={(e) => { setJob(e.target.value); setAnalysed(false); }} /><div className="card-footer"><span><span className="file-dot lavender"/>Role details are analysed privately</span><span>{job.trim().split(/\s+/).filter(Boolean).length} words</span></div></section>
 
@@ -82,11 +116,11 @@ export default function Home() {
           </div>
 
           <aside className="results-column">
-            <section className="score-card"><div className="score-topline"><span className="section-kicker">YOUR MATCH SNAPSHOT</span><button aria-label="More options" className="dots-button">···</button></div><div className="score-main"><div className="score-ring" style={{ "--score": `${result.score}%`, "--score-color": scoreColor } as CSSProperties}><div className="score-inner"><strong>{result.score}<small>%</small></strong><span>match</span></div></div><div className="score-copy"><span className="score-caption">ROLE ALIGNMENT</span><h3>{result.score >= 75 ? "Strong alignment" : result.score >= 50 ? "Good potential" : "Room to grow"}</h3><p>{result.matched.length} of {result.matched.length + result.missing.length} role keywords found in your résumé.</p></div></div><div className="score-divider"/><div className="score-stats"><div><span className="stat-icon green"><Icon name="check" size={14}/></span><strong>{result.matched.length}</strong><span>keywords matched</span></div><div><span className="stat-icon amber"><Icon name="spark" size={13}/></span><strong>{result.missing.length}</strong><span>to strengthen</span></div></div><div className="score-footnote">A helpful guide, not a hiring prediction.</div></section>
+            <section className="score-card"><div className="score-topline"><span className="section-kicker">YOUR MATCH SNAPSHOT</span><button aria-label="More options" className="dots-button">···</button></div><div className="score-main"><div className="score-ring" style={{ "--score": `${result.score}%`, "--score-color": scoreColor } as CSSProperties}><div className="score-inner"><strong>{result.score}<small>%</small></strong><span>match</span></div></div><div className="score-copy"><span className="score-caption">ROLE ALIGNMENT</span><h3>{result.score >= 75 ? "Strong alignment" : result.score >= 50 ? "Good potential" : "Room to grow"}</h3><p>{result.matched.length} of {result.matched.length + result.missing.length} role keywords found in your résumé.</p></div></div><div className="score-divider"/><div className="score-stats"><div><span className="stat-icon green"><Icon name="check" size={14}/></span><strong>{result.skillMatched.length}</strong><span>skills matched</span></div><div><span className="stat-icon amber"><Icon name="spark" size={13}/></span><strong>{result.skillMissing.length}</strong><span>to highlight</span></div></div><div className="score-footnote">A helpful guide, not a hiring prediction.</div></section>
 
-            <section className="insight-card"><div className="insight-heading"><div><span className="section-kicker">THE GOOD STUFF</span><h3>Your strengths</h3></div><span className="count-pill">{result.matched.length}</span></div><p className="insight-description">Experience that already speaks their language.</p><div className="tag-list">{result.matched.length ? result.matched.slice(0, 8).map((item) => <span className="skill-tag matched" key={item}><Icon name="check" size={12}/>{item}</span>) : <span className="empty-inline">Add résumé and role details to see your overlap.</span>}</div><button className="subtle-link" onClick={() => setActiveTab("Strengths")}>Explore matched skills <Icon name="arrow" size={14}/></button></section>
+            <section className="insight-card"><div className="insight-heading"><div><span className="section-kicker">THE GOOD STUFF</span><h3>Your strengths</h3></div><span className="count-pill">{result.skillMatched.length}</span></div><p className="insight-description">Experience that already speaks their language.</p><div className="tag-list">{result.skillMatched.length ? result.skillMatched.slice(0, 8).map((item) => <span className="skill-tag matched" key={item}><Icon name="check" size={12}/>{item}</span>) : <span className="empty-inline">Add résumé and role details to see your overlap.</span>}</div><button className="subtle-link" onClick={() => setActiveTab("Strengths")}>Explore matched skills <Icon name="arrow" size={14}/></button></section>
 
-            <section className="insight-card gap-card"><div className="insight-heading"><div><span className="section-kicker">YOUR NEXT OPPORTUNITY</span><h3>Skills to highlight</h3></div><span className="count-pill warm">{result.missing.length}</span></div><p className="insight-description">Mention these if they’re part of your experience.</p><div className="tag-list">{result.missing.length ? result.missing.slice(0, 8).map((item) => <span className="skill-tag missing" key={item}>{item}</span>) : <span className="empty-inline">No obvious gaps found. Nice work.</span>}</div><div className="tip-box"><span className="tip-spark"><Icon name="spark" size={14}/></span><p><strong>Make it count.</strong> Add evidence and outcomes where you can. Specific examples help your experience stand out.</p></div></section>
+            <section className="insight-card gap-card"><div className="insight-heading"><div><span className="section-kicker">YOUR NEXT OPPORTUNITY</span><h3>Skills to highlight</h3></div><span className="count-pill warm">{result.skillMissing.length}</span></div><p className="insight-description">Mention these if they’re part of your experience.</p><div className="tag-list">{result.skillMissing.length ? result.skillMissing.slice(0, 8).map((item) => <span className="skill-tag missing" key={item}>{item}</span>) : <span className="empty-inline">No obvious gaps found. Nice work.</span>}</div><div className="tip-box"><span className="tip-spark"><Icon name="spark" size={14}/></span><p><strong>Make it count.</strong> Add evidence and outcomes where you can. Specific examples help your experience stand out.</p></div></section>
 
             <div className="method-note"><span className="method-icon">✳</span><span>Skills are identified from the text you provide. Always review the result in context.</span></div>
           </aside>
